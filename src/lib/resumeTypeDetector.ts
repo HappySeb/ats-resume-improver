@@ -209,7 +209,10 @@ export function detectResumeType(resumeData: ResumeData): ResumeProfile {
     type = 'student'
   } else if (advancedDegree && expCount <= 2 && yearsExp < 4) {
     type = 'academic'
-  } else if (certHeavy && (yearsExp < 5 || certCount > expCount)) {
+  } else if (
+    certHeavy &&
+    (yearsExp < 5 || (certCount >= 6 && certCount > expCount * 2))
+  ) {
     type = 'certification-heavy'
   } else if (careerChanger) {
     type = 'career-changer'
