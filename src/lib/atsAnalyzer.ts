@@ -78,6 +78,15 @@ const SECTION_PATTERNS: Record<string, RegExp[]> = {
     /certifications?|certification|licenses?|licences?|credentials?|habilitations?/i,
   ],
 }
+export function detectSections(text: string): Record<string, boolean> {
+  const detected: Record<string, boolean> = {}
+
+  for (const [section, patterns] of Object.entries(SECTION_PATTERNS)) {
+    detected[section] = patterns.some((pattern) => pattern.test(text))
+  }
+
+  return detected
+}
 // ─── Contact Info Detection ──────────────────────────────────────────────────
 
 export function detectContactInfo(text: string): {
