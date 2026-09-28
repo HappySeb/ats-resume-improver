@@ -20,24 +20,70 @@ export async function parseDocument(file: File): Promise<string> {
 
 async function parsePDF(file: File): Promise<string> {
   const pdfjsLib = await import('pdfjs-dist')
-  // Use the locally bundled worker (copied to dist by Vite) — no CDN dependency
+
+  // Use the locally bundled worker
   pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorkerUrl
 
   const arrayBuffer = await file.arrayBuffer()
   const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise
 
-  const texts: string[] = []
+  const pages: string[] = []
 
   for (let i = 1; i <= pdf.numPages; i++) {
     const page = await pdf.getPage(i)
     const content = await page.getTextContent()
-    const pageText = content.items
-      .map((item: any) => ('str' in item ? item.str : ''))
-      .join(' ')
-    texts.push(pageText)
+
+    const items = content.items
+      .filter((item: any) => 'str' in item && item.str.trim())
+      .map((item: any) => ({
+        str: item.str,
+        x: item.transform?.[4] ?? 0,
+        y: item.transform?.[5] ?? 0,
+      }))
+
+    const lines: Array<{
+      y: number
+      parts: Array<{ str: string; x: number }>
+    }> = []
+
+    const lineTolerance = 2.5
+
+    for (const item of items) {
+      let line = lines.find(
+        (existingLine) => Math.abs(existingLine.y - item.y) <= lineTolerance
+      )
+
+      if (!line) {
+        line = {
+          y: item.y,
+          parts: [],
+        }
+        lines.push(line)
+      }
+
+      line.parts.push({
+        str: item.str,
+        x: item.x,
+      })
+    }
+
+    const pageText = lines
+      .sort((a, b) => b.y - a.y)
+      .map((line) =>
+        line.parts
+          .sort((a, b) => a.x - b.x)
+          .map((part) => part.str)
+          .join(' ')
+          .replace(/\s+/g, ' ')
+          .trim()
+      )
+      .filter(Boolean)
+      .join('\n')
+
+    pages.push(pageText)
   }
 
-  return texts.join('\n')
+  return pages.join('\n\n')
 }
 
 async function parseDOCX(file: File): Promise<string> {
