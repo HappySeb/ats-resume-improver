@@ -98,25 +98,48 @@ export function detectContactInfo(text: string): {
 export function detectDateIssues(text: string): string[] {
   const issues: string[] = []
 
-  // Check for "Present" or year patterns near experience section
-  const hasPresent = /present|current|now/i.test(text)
-  const hasYears = /\b(19|20)\d{2}\b/.test(text)
+  const normalized = text
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+
+  const hasYears = /\b(19|20)\d{2}\b/.test(normalized)
 
   if (!hasYears) {
-    issues.push('No employment dates found — ATS systems require date ranges for experience entries.')
+    issues.push(
+      'No employment dates found — ATS systems require date ranges for experience entries.'
+    )
+    return issues
   }
 
-  // Check for inconsistent date formats
-  const formats = {
-    mmyyyy: /\b(0?[1-9]|1[0-2])\/(19|20)\d{2}\b/g,
-    monthYear: /\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]* (19|20)\d{2}\b/gi,
-    yearOnly: /\b(19|20)\d{2}\b/g,
+  const hasCurrent =
+    /\b(present|current|now|aujourd['’]?hui|actuel|actuellement|en cours)\b/i.test(
+      normalized
+    )
+
+  const hasNumericMonthYear =
+    /\b(0?[1-9]|1[0-2])[\/\-](19|20)\d{2}\b/.test(normalized)
+
+  const hasTextMonthYear =
+    /\b(jan|janv|janvier|feb|february|fev|fevr|fevrier|mar|march|mars|apr|april|avr|avril|may|mai|jun|june|juin|jul|july|juil|juillet|aug|august|aou|aout|sep|sept|september|septembre|oct|october|octobre|nov|november|novembre|dec|december|decembre)\s+(19|20)\d{2}\b/i.test(
+      normalized
+    )
+
+  /*
+   * Only report inconsistent date formatting when two genuinely
+   * different month/year styles are present.
+   *
+   * A textual date such as "Jan 2020" naturally also contains "2020";
+   * the previous implementation incorrectly counted that as two formats.
+   */
+  if (hasNumericMonthYear && hasTextMonthYear) {
+    issues.push(
+      'Multiple date formats detected — use one consistent format throughout the resume.'
+    )
   }
 
-  const foundFormats = Object.entries(formats).filter(([, re]) => re.test(text))
-  if (foundFormats.length > 1 && !hasPresent) {
-    issues.push('Multiple date formats detected — stick to one format (e.g., "Jan 2022 – Present").')
-  }
+  // "Present", "Aujourd'hui", "En cours", etc. are valid current-role markers.
+  void hasCurrent
 
   return issues
 }
