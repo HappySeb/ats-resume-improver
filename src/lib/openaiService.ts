@@ -60,92 +60,283 @@ SUMMARY SECTION RULES:
 `
 
 // ─── Parse Resume Locally (No AI) ────────────────────────────────────────────
-
 export function parseResumeLocal(rawText: string): ResumeData {
-  const lines = rawText.split('\n').map((l) => l.trim()).filter(Boolean)
+  const lines = rawText
+    .split('\n')
+    .map((l) => l.trim())
+    .filter(Boolean)
+
+  const normalizeLabel = (value: string) =>
+    value
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .trim()
+
+  const isSummaryHeader = (line: string) =>
+    /^(summary|resume|profil|profile|objective|about|overview)$/i.test(
+      normalizeLabel(line)
+    )
+
+  const isExperienceHeader = (line: string) =>
+    /^(experience|experience professionnelle|professional experience|work history|employment|career)$/i.test(
+      normalizeLabel(line)
+    )
+
+  const isEducationHeader = (line: string) =>
+    /^(education|formation|formations|etudes|academic background)$/i.test(
+      normalizeLabel(line)
+    )
+
+  const isSkillsHeader = (line: string) =>
+    /^(skills|competences|competences techniques|technical skills|technologies|proficiencies|tools|competences et recompenses)$/i.test(
+      normalizeLabel(line)
+    )
+
+  const isCertificationsHeader = (line: string) =>
+    /^(certification|certifications|licenses|licences|credentials)$/i.test(
+      normalizeLabel(line)
+    )
+
+  const isKnownHeader = (line: string) =>
+    isSummaryHeader(line) ||
+    isExperienceHeader(line) ||
+    isEducationHeader(line) ||
+    isSkillsHeader(line) ||
+    isCertificationsHeader(line) ||
+    /^(projects?|projets?|langues|languages)$/i.test(normalizeLabel(line))
+
   const name = lines[0] ?? ''
-  const email = rawText.match(/[\w.+-]+@[\w-]+\.[a-z]{2,}/i)?.[0] ?? ''
-  const phone = rawText.match(/(\+?1\s?)?(\(?\d{3}\)?[\s\-.]?\d{3}[\s\-.]?\d{4})/)?.[0] ?? ''
+
+  const email =
+    rawText.match(/[\w.+-]+@[\w-]+\.[a-z]{2,}/i)?.[0] ?? ''
+
+  const phone =
+    rawText.match(
+      /(?:\+33|0033|0)[\s().-]*[1-9](?:[\s().-]*\d{2}){4}|\+?\d[\d\s().-]{8,}\d/
+    )?.[0] ?? ''
 
   let summary = ''
-  const summaryIdx = lines.findIndex((l) => /^(summary|objective|profile|about|overview)/i.test(l))
-  if (summaryIdx >= 0 && summaryIdx + 1 < lines.length) summary = lines[summaryIdx + 1]
+  const summaryIdx = lines.findIndex(isSummaryHeader)
 
-  const skills: string[] = []
-  const skillsIdx = lines.findIndex((l) => /^skills/i.test(l))
-  if (skillsIdx >= 0 && skillsIdx + 1 < lines.length) {
-    skills.push(...lines[skillsIdx + 1].split(/[,•·|]/).map((s) => s.trim()).filter(Boolean))
-  }
+  if (summaryIdx >= 0) {
+    const summaryLines: string[] = []
 
-  const certifications: string[] = []
-  const certIdx = lines.findIndex((l) => /^certifications?/i.test(l))
-  if (certIdx >= 0) {
-    for (let i = certIdx + 1; i < Math.min(certIdx + 6, lines.length); i++) {
-      if (/^(education|experience|skills)/i.test(lines[i])) break
-      if (lines[i].length > 5) certifications.push(lines[i].replace(/^[•\-]\s*/, ''))
+    for (let i = summaryIdx + 1; i < lines.length; i++) {
+      if (isKnownHeader(lines[i])) break
+      summaryLines.push(lines[i])
     }
+
+    summary = summaryLines.join(' ').trim()
   }
 
   const experience: ResumeData['experience'] = []
-  let inExperience = false
-  let currentExp: ResumeData['experience'][0] | null = null
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i]
-    if (/^(professional experience|work history|employment|experience)/i.test(line)) { inExperience = true; continue }
-    if (/^(education|skills|certifications?|projects?)/i.test(line)) {
-      inExperience = false
-      if (currentExp) { experience.push(currentExp); currentExp = null }
-      continue
-    }
-    if (inExperience) {
-      if (line.includes('|')) {
-        if (currentExp) experience.push(currentExp)
-        const parts = line.split('|').map((p) => p.trim())
-        currentExp = { title: parts[0] ?? '', company: parts[1] ?? '', startDate: parts[2]?.split('-')[0]?.trim() ?? '', endDate: parts[2]?.split('-')[1]?.trim() ?? 'Present', bullets: [] }
-      } else if (currentExp && (line.startsWith('-') || line.startsWith('•'))) {
-        currentExp.bullets.push(line.replace(/^[-•]\s*/, ''))
+
+  const month =
+    '(?:jan(?:v(?:ier)?)?|january|feb(?:ruary)?|fev(?:r(?:ier)?)?|févr(?:ier)?|mar(?:ch|s)?|apr(?:il)?|avr(?:il)?|may|mai|jun(?:e)?|juin|jul(?:y)?|juil(?:let)?|aug(?:ust)?|aou(?:t)?|août|sep(?:t(?:ember|embre)?)?|oct(?:ober|obre)?|nov(?:ember|embre)?|dec(?:ember)?|déc(?:embre)?)'
+
+  const datedValue = `(?:${month}\\s+)?\\d{4}`
+  const currentValue =
+    `(?:${month}\\s+)?\\d{4}|present|current|now|aujourd['’]?hui|actuel(?:lement)?`
+
+  const dateRangeRegex = new RegExp(
+    `^(.*?)\\s+(${datedValue})\\s*(?:-|–|—|\\/|à|to)\\s*(${currentValue})\\s*$`,
+    'i'
+  )
+
+  const experienceIdx = lines.findIndex(isExperienceHeader)
+
+  if (experienceIdx >= 0) {
+    let currentExp: ResumeData['experience'][0] | null = null
+
+    for (let i = experienceIdx + 1; i < lines.length; i++) {
+      const line = lines[i]
+
+      if (
+        isEducationHeader(line) ||
+        isSkillsHeader(line) ||
+        isCertificationsHeader(line) ||
+        /^(projects?|projets?)$/i.test(normalizeLabel(line))
+      ) {
+        break
+      }
+
+      const dateMatch = line.match(dateRangeRegex)
+
+      if (dateMatch) {
+        if (currentExp) {
+          experience.push(currentExp)
+        }
+
+        currentExp = {
+          title: dateMatch[1].trim(),
+          company: '',
+          startDate: dateMatch[2].trim(),
+          endDate: dateMatch[3].trim(),
+          bullets: [],
+        }
+
+        continue
+      }
+
+      if (!currentExp) continue
+
+      if (
+        !currentExp.company &&
+        !line.startsWith('•') &&
+        !line.startsWith('-')
+      ) {
+        currentExp.company = line
+        continue
+      }
+
+      if (line.startsWith('•') || line.startsWith('-')) {
+        currentExp.bullets.push(
+          line.replace(/^[•\-]\s*/, '').trim()
+        )
+        continue
+      }
+
+      if (currentExp.bullets.length > 0) {
+        const lastIndex = currentExp.bullets.length - 1
+        currentExp.bullets[lastIndex] =
+          `${currentExp.bullets[lastIndex]} ${line}`.trim()
       }
     }
+
+    if (currentExp) {
+      experience.push(currentExp)
+    }
   }
-  if (currentExp) experience.push(currentExp)
 
   const education: ResumeData['education'] = []
-  const eduIdx = lines.findIndex((l) => /^education/i.test(l))
-  if (eduIdx >= 0) {
-    for (let i = eduIdx + 1; i < Math.min(eduIdx + 8, lines.length); i++) {
-      if (/^(experience|skills|certifications?|projects?)/i.test(lines[i])) break
-      if (lines[i].includes('|')) {
-        const parts = lines[i].split('|').map((p) => p.trim())
-        education.push({ degree: parts[0] ?? '', institution: parts[1] ?? '', year: parts[2] ?? '' })
+  const educationIdx = lines.findIndex(isEducationHeader)
+
+  if (educationIdx >= 0) {
+    const eduLines: string[] = []
+
+    for (let i = educationIdx + 1; i < lines.length; i++) {
+      if (
+        isExperienceHeader(lines[i]) ||
+        isSkillsHeader(lines[i]) ||
+        isCertificationsHeader(lines[i])
+      ) {
+        break
+      }
+
+      eduLines.push(lines[i])
+    }
+
+    if (eduLines.length >= 2) {
+      education.push({
+        institution: eduLines[0],
+        degree: eduLines.slice(1).join(' '),
+        year: '',
+      })
+    } else if (eduLines.length === 1) {
+      education.push({
+        institution: eduLines[0],
+        degree: '',
+        year: '',
+      })
+    }
+  }
+
+  const skills: string[] = []
+
+  const skillsHeaderIdx = lines.findIndex(isSkillsHeader)
+
+  if (skillsHeaderIdx >= 0) {
+    const skillLines: string[] = []
+
+    for (let i = skillsHeaderIdx + 1; i < lines.length; i++) {
+      const line = lines[i]
+
+      if (
+        isExperienceHeader(line) ||
+        isEducationHeader(line) ||
+        isCertificationsHeader(line) ||
+        /^(projects?|projets?)$/i.test(normalizeLabel(line))
+      ) {
+        break
+      }
+
+      if (/^(langues|languages)\s*:/i.test(normalizeLabel(line))) {
+        break
+      }
+
+      if (/^certifications?\s*:/i.test(normalizeLabel(line))) {
+        break
+      }
+
+      skillLines.push(
+        line.replace(
+          /^(competences techniques|technical skills|skills)\s*:\s*/i,
+          ''
+        )
+      )
+    }
+
+    const combinedSkills = skillLines.join(' ')
+
+    skills.push(
+      ...combinedSkills
+        .split(/[,•·|;]/)
+        .map((s) => s.trim())
+        .filter((s) => s.length > 1)
+    )
+  }
+
+  const certifications: string[] = []
+
+  for (const line of lines) {
+    const certMatch = line.match(/^certifications?\s*:\s*(.+)$/i)
+
+    if (certMatch) {
+      certifications.push(
+        ...certMatch[1]
+          .split(/[,•·|;]/)
+          .map((s) => s.trim())
+          .filter(Boolean)
+      )
+    }
+  }
+
+  const certIdx = lines.findIndex(isCertificationsHeader)
+
+  if (certIdx >= 0) {
+    for (let i = certIdx + 1; i < lines.length; i++) {
+      if (
+        isExperienceHeader(lines[i]) ||
+        isEducationHeader(lines[i]) ||
+        isSkillsHeader(lines[i])
+      ) {
+        break
+      }
+
+      if (lines[i].length > 2) {
+        certifications.push(
+          lines[i].replace(/^[•\-]\s*/, '').trim()
+        )
       }
     }
   }
 
-  const projects: NonNullable<ResumeData['projects']> = []
-  const projectsHeaderIdx = lines.findIndex((l) => /^projects?/i.test(l))
-  if (projectsHeaderIdx >= 0) {
-    let currentProj: { name: string; description: string; technologies: string[]; url?: string } | null = null
-    for (let i = projectsHeaderIdx + 1; i < lines.length; i++) {
-      const l = lines[i]
-      if (/^(education|professional experience|experience|skills|certifications?|summary|objective)/i.test(l)) break
-      if (!l.startsWith('-') && !l.startsWith('•') && l.length > 2) {
-        if (currentProj) projects.push(currentProj)
-        currentProj = { name: l, description: '', technologies: [] }
-      } else if (currentProj) {
-        const content = l.replace(/^[-•]\s*/, '')
-        if (/^(tech|stack|built with|technologies|tools):\s*/i.test(content)) {
-          currentProj.technologies = content.replace(/^[^:]+:\s*/i, '').split(/[,|]/).map((t) => t.trim()).filter(Boolean)
-        } else if (/^https?:\/\//i.test(content)) {
-          currentProj.url = content
-        } else {
-          currentProj.description = currentProj.description ? currentProj.description + ' ' + content : content
-        }
-      }
-    }
-    if (currentProj) projects.push(currentProj)
-  }
+  const uniqueSkills = [...new Set(skills)]
+  const uniqueCertifications = [...new Set(certifications)]
 
-  return { name, email, phone, location: '', summary, experience, education, skills, certifications, projects: projects.length > 0 ? projects : undefined, rawText }
+  return {
+    name,
+    email,
+    phone,
+    location: '',
+    summary,
+    experience,
+    education,
+    skills: uniqueSkills,
+    certifications: uniqueCertifications,
+    rawText,
+  }
 }
 
 // ─── Stage 1: Parse Resume with AI ───────────────────────────────────────────
