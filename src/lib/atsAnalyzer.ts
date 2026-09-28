@@ -54,22 +54,30 @@ export function isLikelyResume(text: string): { confident: boolean; reason: stri
 // ─── Section Detection ───────────────────────────────────────────────────────
 
 const SECTION_PATTERNS: Record<string, RegExp[]> = {
-  contact: [/email|phone|mobile|address|linkedin|github/i],
-  summary: [/summary|objective|profile|about|overview/i],
-  experience: [/experience|work history|employment|career/i],
-  education: [/education|degree|university|college|school/i],
-  skills: [/skills|technologies|competencies|proficiencies|tools/i],
-  certifications: [/certifications?|licenses?|credentials?/i],
-}
+  contact: [
+    /email|e-mail|mail|phone|telephone|téléphone|mobile|address|adresse|linkedin|github/i,
+  ],
 
-export function detectSections(text: string): Record<string, boolean> {
-  const detected: Record<string, boolean> = {}
-  for (const [section, patterns] of Object.entries(SECTION_PATTERNS)) {
-    detected[section] = patterns.some(p => p.test(text))
-  }
-  return detected
-}
+  summary: [
+    /summary|resume|résumé|objective|profile|profil|about|overview|synthese|synthèse/i,
+  ],
 
+  experience: [
+    /experience|expérience|experience professionnelle|expérience professionnelle|professional experience|work history|employment|career|parcours professionnel/i,
+  ],
+
+  education: [
+    /education|éducation|formation|formations|etudes|études|degree|diplome|diplôme|university|université|college|école|ecole|school/i,
+  ],
+
+  skills: [
+    /skills|competences|compétences|competences techniques|compétences techniques|technologies|competencies|proficiencies|tools|outils|savoir-faire/i,
+  ],
+
+  certifications: [
+    /certifications?|certification|licenses?|licences?|credentials?|habilitations?/i,
+  ],
+}
 // ─── Contact Info Detection ──────────────────────────────────────────────────
 
 export function detectContactInfo(text: string): {
