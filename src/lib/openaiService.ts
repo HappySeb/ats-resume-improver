@@ -130,24 +130,108 @@ export function parseResumeLocal(rawText: string): ResumeData {
     summary = summaryLines.join(' ').trim()
   }
 
-  const experience: ResumeData['experience'] = []
+    const experience: ResumeData['experience'] = []
 
   const month =
-    '(?:jan(?:v(?:ier)?)?|january|feb(?:ruary)?|fev(?:r(?:ier)?)?|févr(?:ier)?|mar(?:ch|s)?|apr(?:il)?|avr(?:il)?|may|mai|jun(?:e)?|juin|jul(?:y)?|juil(?:let)?|aug(?:ust)?|aou(?:t)?|août|sep(?:t(?:ember|embre)?)?|oct(?:ober|obre)?|nov(?:ember|embre)?|dec(?:ember)?|déc(?:embre)?)'
+    '(?:jan(?:v(?:ier)?)?|january|feb(?:ruary)?|fev(?:r(?:ier)?)?|févr(?:ier)?|fevrier|mar(?:ch|s)?|apr(?:il)?|avr(?:il)?|may|mai|jun(?:e)?|juin|jul(?:y)?|juil(?:let)?|aug(?:ust)?|aou(?:t)?|août|aout|sep(?:t(?:ember|embre)?)?|oct(?:ober|obre)?|nov(?:ember|embre)?|dec(?:ember)?|déc(?:embre)?|decembre)'
 
   const datedValue = `(?:${month}\\s+)?\\d{4}`
+
   const currentValue =
-    `(?:${month}\\s+)?\\d{4}|present|current|now|aujourd['’]?hui|actuel(?:lement)?`
+    `(?:${datedValue}|present|current|now|aujourd['’]?hui|actuel(?:lement)?|en cours)`
 
   const dateRangeRegex = new RegExp(
-    `^(.*?)\\s+(${datedValue})\\s*(?:-|–|—|\\/|à|to)\\s*(${currentValue})\\s*$`,
+    `^(.*?)\\s*(${datedValue})\\s*(?:\\/|–|—|\\bto\\b|\\bà\\b)\\s*(${currentValue})(?:\\s*-\\s*(.+))?$`,
     'i'
   )
+
+  const normalizeDateValue = (value: string): string => {
+    const normalized = normalizeLabel(value).replace(/\./g, '')
+
+    if (
+      /^(present|current|now|aujourd'hui|aujourd’hui|actuel|actuellement|en cours)$/i.test(
+        normalized
+      )
+    ) {
+      return 'Present'
+    }
+
+    const match = normalized.match(/^([a-z]+)\s+(\d{4})$/)
+
+    if (!match) {
+      return value.trim()
+    }
+
+    const months: Record<string, string> = {
+      jan: 'Jan',
+      janv: 'Jan',
+      janvier: 'Jan',
+      january: 'Jan',
+
+      feb: 'Feb',
+      february: 'Feb',
+      fev: 'Feb',
+      fevr: 'Feb',
+      fevrier: 'Feb',
+
+      mar: 'Mar',
+      march: 'Mar',
+      mars: 'Mar',
+
+      apr: 'Apr',
+      april: 'Apr',
+      avr: 'Apr',
+      avril: 'Apr',
+
+      may: 'May',
+      mai: 'May',
+
+      jun: 'Jun',
+      june: 'Jun',
+      juin: 'Jun',
+
+      jul: 'Jul',
+      july: 'Jul',
+      juil: 'Jul',
+      juillet: 'Jul',
+
+      aug: 'Aug',
+      august: 'Aug',
+      aou: 'Aug',
+      aout: 'Aug',
+
+      sep: 'Sep',
+      sept: 'Sep',
+      september: 'Sep',
+      septembre: 'Sep',
+
+      oct: 'Oct',
+      october: 'Oct',
+      octobre: 'Oct',
+
+      nov: 'Nov',
+      november: 'Nov',
+      novembre: 'Nov',
+
+      dec: 'Dec',
+      december: 'Dec',
+      decembre: 'Dec',
+    }
+
+    const convertedMonth = months[match[1]]
+
+    if (!convertedMonth) {
+      return value.trim()
+    }
+
+    return `${convertedMonth} ${match[2]}`
+  }
 
   const experienceIdx = lines.findIndex(isExperienceHeader)
 
   if (experienceIdx >= 0) {
     let currentExp: ResumeData['experience'][0] | null = null
+    let pendingTitle = ''
 
     for (let i = experienceIdx + 1; i < lines.length; i++) {
       const line = lines[i]
@@ -168,25 +252,36 @@ export function parseResumeLocal(rawText: string): ResumeData {
           experience.push(currentExp)
         }
 
+        const titleOnSameLine = dateMatch[1]
+          .replace(/[.\s-]+$/, '')
+          .trim()
+
         currentExp = {
-          title: dateMatch[1].trim(),
+          title: titleOnSameLine || pendingTitle || 'Experience',
           company: '',
-          startDate: dateMatch[2].trim(),
-          endDate: dateMatch[3].trim(),
+          startDate: normalizeDateValue(dateMatch[2]),
+          endDate: normalizeDateValue(dateMatch[3]),
           bullets: [],
         }
 
+        pendingTitle = ''
         continue
       }
 
-      if (!currentExp) continue
+      const nextLine = lines[i + 1] ?? ''
+      const nextDateMatch = nextLine.match(dateRangeRegex)
 
       if (
-        !currentExp.company &&
+        nextDateMatch &&
+        nextDateMatch[1].trim() === '' &&
         !line.startsWith('•') &&
         !line.startsWith('-')
       ) {
-        currentExp.company = line
+        pendingTitle = line
+        continue
+      }
+
+      if (!currentExp) {
         continue
       }
 
@@ -194,13 +289,8 @@ export function parseResumeLocal(rawText: string): ResumeData {
         currentExp.bullets.push(
           line.replace(/^[•\-]\s*/, '').trim()
         )
-        continue
-      }
-
-      if (currentExp.bullets.length > 0) {
-        const lastIndex = currentExp.bullets.length - 1
-        currentExp.bullets[lastIndex] =
-          `${currentExp.bullets[lastIndex]} ${line}`.trim()
+      } else {
+        currentExp.bullets.push(line)
       }
     }
 
@@ -208,7 +298,6 @@ export function parseResumeLocal(rawText: string): ResumeData {
       experience.push(currentExp)
     }
   }
-
   const education: ResumeData['education'] = []
   const educationIdx = lines.findIndex(isEducationHeader)
 
